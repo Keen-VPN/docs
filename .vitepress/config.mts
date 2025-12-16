@@ -76,7 +76,7 @@ export default withMermaid(
       },
 
       socialLinks: [
-        { icon: 'github', link: 'https://github.com/keenvpn/core' }
+        { icon: 'github', link: 'https://github.com/Keen-VPN' }
       ],
 
       footer: {
