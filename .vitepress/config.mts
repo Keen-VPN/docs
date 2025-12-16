@@ -7,6 +7,7 @@ export default withMermaid(
     description: "Military-grade VPN Engineering Documentation",
     srcDir: '.',
     cleanUrls: true,
+    base: '/docs/',
 
     themeConfig: {
       nav: [
