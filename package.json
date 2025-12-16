@@ -1,0 +1,18 @@
+{
+    "name": "keenvpn-docs",
+    "version": "1.0.0",
+    "description": "KeenVPN Architecture Documentation",
+    "scripts": {
+        "docs:dev": "vitepress dev",
+        "docs:build": "vitepress build",
+        "docs:preview": "vitepress preview"
+    },
+    "dependencies": {
+        "mermaid": "^10.9.0",
+        "vitepress": "^1.0.0-rc.44",
+        "vitepress-plugin-mermaid": "^2.0.10"
+    },
+    "devDependencies": {
+        "vue": "^3.4.0"
+    }
+}
