@@ -6,7 +6,7 @@ hero:
   text: "Security Without Compromise"
   tagline: "The living documentation for Project Phoenix (B2C), Project Aegis (B2B), and Current Operations."
   image:
-    src: /logo.png
+    src: https://vpnkeen.com/logo-white.png
     alt: KeenVPN
   actions:
     - theme: brand
