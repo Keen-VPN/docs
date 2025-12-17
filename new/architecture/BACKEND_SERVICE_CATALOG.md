@@ -29,6 +29,7 @@
 * **Responsibilities**:
   * Validates Firebase ID Tokens.
   * Syncs Subscription Status (Stripe/Apple).
+  * **Account Mgmt**: Manages Payment History & Invoices.
   * **Blind Signing**: Issues `Signed(Blind(Token))` upon proof of valid subscription.
 * **Data Access**: Read/Write access to `UserDB` (Postgres). NO access to VPN Configs.
 
@@ -36,10 +37,17 @@
 
 * **Role**: Knows *That* a user is valid, but not *Who* they are.
 * **Responsibilities**:
+  * **Location Discovery**: Publicly lists available VPN regions/endpoints.
+  * **Fleet Management**: Registers new nodes and ingests real-time metrics/health.
   * **Token Redemption**: Verifies cryptographic signature of the Blind Token.
-  * **Double-Spend Check**: Ensures token hasn't been used recently.
-  * **Node Allocation**: Assigns the user to the best available WireGuard node.
-* **Data Access**: Read/Write to `TokenSpendDB` (Redis). NO access to `UserDB`.
+  * **Double-Spend Check**: Ensures token hasn't been used recently (Redis).
+  * **Optimal Node Selection**: Assigns the user to the best node based on load metrics.
+  * **Config Gen**: Returns WireGuard keys (`Peer/Interface`).
+* **Data Access**:
+  * **Write**: `StateDB` (Redis) for used tokens.
+  * **Write**: `NodeDB` (Postgres) for Node Registration/Status.
+  * **Read/Write**: Redis (Hot Metrics).
+  * **NO Access**: `UserDB`.
 
 ### C. `b2c-analytics` ( The Observer)
 
@@ -60,6 +68,7 @@
 * **Role**: Runs on EVERY VPN Node (Exit Nodes).
 * **Responsibilities**:
   * **Self-Healing**: Reports health/load to internal monitoring.
+  * **Heartbeat**: Sends Registration & Pulse (Metrics) to `b2c-config`.
   * **WireGuard Mgmt**: Configures kernel interfaces via Netlink.
   * **Firewall**: Manages `nftables` / `iptables` for NAT and blocking.
 

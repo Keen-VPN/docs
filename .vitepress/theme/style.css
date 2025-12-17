@@ -1,0 +1,26 @@
+/* .vitepress/theme/style.css */
+
+/* Target the mermaid diagram container */
+.mermaid {
+  transition: transform 0.3s ease-in-out, z-index 0s linear 0.1s;
+  cursor: zoom-in;
+  transform-origin: center top;
+  position: relative;
+  z-index: 1;
+}
+
+/* On hover, scale it up */
+.mermaid:hover {
+  transform: scale(1.5); /* 150% magnification */
+  z-index: 100;          /* Bring to front */
+  background-color: var(--vp-c-bg); /* Ensure background isn't transparent over other text */
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2); /* Add shadow for depth */
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+/* Ensure the SVG itself scales responsively */
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}

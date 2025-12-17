@@ -1,4 +1,3 @@
-.agent
 node_modules
 .vitepress/dist
 .vitepress/cache
