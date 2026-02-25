@@ -1,110 +1,44 @@
-# Infrastructure Scaffolding & File Structure
+# Infrastructure Scaffolding & Repositories
 
-> **Purpose**: Defines the layout for managing VPN Nodes via Infrastructure as Code (IaC).
-> **Tools**: Terraform (Provisioning), Ansible (Configuration), Bash/Python (Glue).
+> **Purpose**: Defines the layout for managing VPN Nodes via separated Infrastructure as Code (IaC) repositories to isolate provisioning, configuration, and execution boundaries.
+> **Tools**: Terraform, Ansible, Node.js (Edge Node Daemon).
 
-## 1. Directory Tree Overview
+## 1. Repository Ecosystem
+
+Instead of a monolithic infrastructure repo, KeenVPN uses three distinct repositories for independent lifecycles.
 
 ```text
-/infrastructure
-├── terraform/
-│   ├── modules/                  # Reusable Cloud Components
-│   │   ├── vpn-node/            # The Exit Node Definition
-│   │   └── network/             # VPC, Subnets, Firewalls
-│   └── live/                     # Environment Instantiations
-│       └── prod/
-│           ├── us-east-1/       # Region Specific
-│           └── eu-central-1/
-├── ansible/
-│   ├── playbooks/                # Orchestration Scripts
-│   └── roles/                    # Configuration Units
-│       ├── common/              # OS Hardening (Alpine)
-│       ├── wireguard/           # WG Kernel Module & Tools
-│       └── daemon/              # The 'node-daemon' Service
-└── scripts/                      # Lifecycle Automation
+/Workspace
+├── /infra-terraform/          # AWS Cloud Resources Provisioning
+├── /infra-ansible/            # Instance Configuration & Hardening
+└── /infra-node-daemon/        # Node.js Edge Process 
 ```
 
-## 2. Terraform Detail (`/infrastructure/terraform`)
+## 2. Terraform Detail (`infra-terraform`)
 
-### Modules
+Manages AWS primitives, network boundaries, API configurations, and cryptographic secrets.
 
-#### `modules/vpn-node/`
+### Modules & Services
 
-* **`main.tf`**: Defines the `aws_instance` (or cloud equivalent). Sets `user_data` to bootstrap the node.
-* **`security_group.tf`**: Defines `aws_security_group`. Allows Inbound UDP/51820 (World) and TCP/22 (Bastion Only).
-* **`variables.tf`**: Inputs for `ami_id`, `instance_type` (default `c5n.large`), `region`, `ssh_key`.
-* **`outputs.tf`**: Exports `public_ip` and `instance_id` for use by the State Manager.
-* **`user_data.sh`**: The cloud-init script. Installs Python/Ansible to prepare for configuration, or downloads the `node-daemon` binary directly.
+- **`main.tf`**: Roots the AWS configuration and orchestrates instances.
+- **`secrets.tf`**: AWS Secrets Manager instantiations (storing variables like `NODE_TOKEN`, `FIREBASE_PRIVATE_KEY`, `BLINDED_SIGNING_PRIVATE_KEY` for different staging and production parity environments).
+- **`auto-scaling.tf`**: Launch templates and threshold-based capacity governors.
+- **`network/`**: VPC, Subnets, and Firewalls.
+- **Security Policy**: Allow Inbound UDP/51820 (WireGuard World) and TCP/22 (Bastion Only).
 
-#### `modules/network/`
+## 3. Ansible Detail (`infra-ansible`)
 
-* **`main.tf`**: Creates a VPC (if not using default).
-* **`subnets.tf`**: Defines Public Subnets for the VPN nodes.
-* **`igw.tf`**: Internet Gateway attachment.
-
-### Live Environments
-
-#### `live/prod/us-east-1/`
-
-* **`main.tf`**: Instantiates `module "vpn-node"`. Sets the provider region to `us-east-1`.
-* **`backend.tf`**: Configures S3 backend for Terraform State (locking via DynamoDB).
-* **`terraform.tfvars`**: Region-specific settings (e.g., `capacity_count = 5`).
-
-## 3. Ansible Detail (`/infrastructure/ansible`)
-
-### Playbooks
-
-#### `playbooks/provision_node.yml`
-
-* **Summary**: The master playbook run on new nodes.
-* **Targets**: `vpn_nodes` (Dynamic Inventory).
-* **Roles**: `common`, `wireguard`, `daemon`.
+Orchestrated to automatically baseline instances booted via Terraform ASG templates.
 
 ### Roles
 
-#### `roles/common/`
+- **`common`**: OS Hardening (Alpine), Kernel Sysctl performance tweaks optimized for UDP, Time chrony.
+- **`wireguard`**: Installs Kernel Modules and interfaces `wg0`.
+- **`node-daemon`**: Mounts the systemd listener script, dynamically pulls the required `NODE_TOKEN` from AWS Secrets Manager using IAM Instance Profiles, and bootstraps the runtime.
 
-* **`tasks/main.yml`**:
-  * Updates system packages (`apk upgrade`).
-  * Configures NTP/Chrony.
-  * Hardens Sysctl (IP Forwarding On, Redirects Off).
-  * Configures `nftables` (Drop all except 51820/22).
-* **`files/sysctl.conf`**: The optimized kernel parameters for high-speed UDP.
+## 4. Node Daemon Detail (`infra-node-daemon`)
 
-#### `roles/wireguard/`
+The isolated source code for the edge processor operating on each server.
 
-* **`tasks/main.yml`**:
-  * Installs `wireguard-tools`.
-  * Generates Keypair (if not handled by daemon).
-  * Sets up the `wg0` interface.
-* **`templates/wg0.conf.j2`**: Jinja2 template for the interface config.
-
-#### `roles/daemon/`
-
-* **`tasks/main.yml`**:
-  * Downloads `node-daemon` binary from S3 Artifacts.
-  * Installs systemd/OpenRC service file.
-  * Starts and enables the service.
-* **`templates/node-daemon.service.j2`**: Systemd unit file definition.
-* **`vars/main.yml`**: Configuration for the daemon (e.g., Config Service URL, Auth Tokens).
-
-## 4. Scripts (`/infrastructure/scripts`)
-
-### `deploy_nodes.sh`
-
-* **Summary**: Wrapper around Terraform.
-* **Usage**: `./deploy_nodes.sh us-east-1 10` (Spin up 10 nodes in Virginia).
-* **Logic**: Updates `terraform.tfvars`, runs `terraform apply -auto-approve`.
-
-### `reap_nodes.py`
-
-* **Summary**: The "Grim Reaper" script.
-* **Logic**:
-    1. Queries Config Service for nodes marked "Drain" (due to Blocklist/Reputation).
-    2. If active connections == 0, Calls Terraform/Cloud API to terminate.
-    3. Runs as a Cron Job every 5 minutes.
-
-### `build_daemon.sh`
-
-* **Summary**: CI/CD script.
-* **Logic**: Bundles the Node.js daemon using `pkg` (into a single binary), signs it, and uploads to S3 bucket.
+- **Summary**: A tightly bundled Node.js application packaged with Node v20+.
+- **Responsibilities**: Executes local WireGuard bindings (`wg` cli proxy), tracks session active bandwidth and latency, and negotiates state securely with the `vpn-backend-service-v2` master monolith.

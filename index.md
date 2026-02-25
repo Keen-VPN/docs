@@ -44,7 +44,7 @@ This repository has been structured by domain for ease of navigation. Below is t
 
 - [**Backend Service Catalog**](./architecture/backend-service-catalog.md): Complete list of V2 backend services.
 - [**B2C Backend Design**](./architecture/b2c-backend-design.md): In-depth review of consumer backend functionality.
-- [**B2B Architecture RFC**](./architecture/b2b-architecture-rfc.md): Request for comments on enterprise SaaS design.
+- [**B2B Architecture RFC**](./architecture/b2b-architecture.md): Request for comments on enterprise SaaS design.
 - [**Infrastructure Design**](./architecture/infrastructure-design.md): Initial infrastructure outline.
 - [**Infrastructure Detailed Design**](./architecture/infrastructure-detailed-design.md): Elaborated infrastructure topologies.
 - [**Infrastructure Scaffolding**](./architecture/infrastructure-scaffolding.md): Infrastructure-as-Code directory map.

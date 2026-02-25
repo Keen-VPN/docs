@@ -1,0 +1,162 @@
+openapi: 3.0.3
+info:
+  title: KeenVPN Backend API V2
+  description: The Monolithic NestJS Gateway for Client Apps and Node Daemons.
+  version: 2.0.0
+servers:
+  - url: https://api.staging.keenvpn.com
+    description: Staging
+  - url: https://api.keenvpn.com
+    description: Production
+
+components:
+  securitySchemes:
+    FirebaseAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    NodeToken:
+      type: apiKey
+      in: header
+      name: X-Node-Token
+
+paths:
+  /account/profile:
+    get:
+      summary: Retrieve User Profile
+      description: Returns the user's account details, parsed from the Firebase token.
+      security:
+        - FirebaseAuth: []
+      responses:
+        "200":
+          description: A user profile object including Firebase UID and email.
+  /account:
+    delete:
+      summary: Delete Account
+      description: Schedules the user's account and associated data for deletion.
+      security:
+        - FirebaseAuth: []
+      responses:
+        "204":
+          description: Account successfully deleted.
+
+  /subscription/plans:
+    get:
+      summary: Get Subscription Plans
+      description: Retrieves the list of available pricing plans (e.g., Free, Plus).
+      responses:
+        "200":
+          description: List of plan objects.
+  /subscription/plan/{id}:
+    get:
+      summary: Get Plan by ID
+      description: Retrieves details of a specific plan by its Stripe Price ID or internal ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A plan object.
+
+  /payment/webhook:
+    post:
+      summary: Stripe Webhook Listener
+      description: Ingests incoming webhooks from Stripe regarding subscription lifecycle events.
+      responses:
+        "200":
+          description: Webhook acknowledged.
+
+  /nodes:
+    get:
+      summary: List Active Nodes
+      description: Retrieves a list of available VPN nodes and their health metrics for client routing.
+      security:
+        - FirebaseAuth: []
+      responses:
+        "200":
+          description: A list of active, load-balanced VPN nodes.
+
+  /nodes/{id}/heartbeat:
+    put:
+      summary: VPN Node Check-in
+      description: Ping from the infra-node-daemon to register health and activity.
+      security:
+        - NodeToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Successfully registered health.
+
+  /b2c/vpn-config/request:
+    post:
+      summary: Request WireGuard Key Exchange
+      description: Validates cryptographic blind signatures and interacts with the Nodes module to provision WireGuard configurations.
+      security:
+        - FirebaseAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                blindedToken:
+                  type: string
+                publicKey:
+                  type: string
+      responses:
+        "200":
+          description: WireGuard Config Payload containing internal assigned IPs and Endpoint coordinates.
+
+  /preferences:
+    get:
+      summary: Get User Preferences
+      description: Retrieves desktop/mobile client routing preferences.
+      security:
+        - FirebaseAuth: []
+      responses:
+        "200":
+          description: User preferences object.
+    put:
+      summary: Update User Preferences
+      description: Mutates client routing configurations.
+      security:
+        - FirebaseAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Preferences updated.
+
+  /sales-contact/submit:
+    post:
+      summary: Submit Enterprise Inquiry
+      description: Captures B2B leads safely with 15-minute anti-spam thresholding.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                company:
+                  type: string
+                message:
+                  type: string
+      responses:
+        "201":
+          description: Contains the generated Reference ID (e.g. KVPN-123456).

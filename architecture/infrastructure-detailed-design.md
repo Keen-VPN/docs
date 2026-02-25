@@ -17,11 +17,12 @@ We use **Alpine Linux** for its minimal footprint (<50MB RAM) and "Hardened by D
 ### Boot Process (Cloud-Init)
 
 1. **Provision**: Cloud Provider boots instance.
-2. **Init**: `cloud-init` runs.
+2. **Init**: `cloud-init` via Ansible runs.
     * Disables SSH Password Auth.
-    * Downloads latest `node-daemon` binary from secure bucket.
-    * Starts `node-daemon` systemd/openrc service.
-3. **Registration**: `node-daemon` generates specific Keypair and calls `Config Service` to register availability.
+    * Downloads latest `node-daemon` binary from secure Github release artifacts.
+    * Dynamically fetches the `NODE_TOKEN` from AWS Secrets Manager for backend authentication.
+    * Starts `node-daemon` systemd service.
+3. **Registration**: `node-daemon` generates its unique Keypair and securely calls the backend API to register its availability.
 
 ## 2. Kernel Tuning (sysctl.conf)
 
@@ -157,7 +158,8 @@ class NodeDaemon {
 
 ### Auto-Scaling
 
-* Standard CPU/Bandwidth scaling (AWS ASG / K8s HPA).
+* **AWS ASG**: Managed via `infra-terraform`, scaling dynamically based on load thresholds.
+* **Secrets Management**: Critical infrastructure secrets (`NODE_TOKEN`, `FIREBASE_PRIVATE_KEY`, `BLINDED_SIGNING_PRIVATE_KEY`) are stored natively in AWS Secrets Manager across each unique environment (Staging/Production). This removes hardcoded credentials across server boundaries.
 
 ### Reputation-Based Draining (The "Grim Reaper")
 

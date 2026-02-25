@@ -1,80 +1,68 @@
 # Backend Service Catalog
 
-> **Strategy**: Monorepo (NestJS Workspace).
-> **Objective**: Modular B2C Architecture with strict Privacy-By-Design.
+> **Strategy**: Majestic Monolith (NestJS Workspace).
+> **Objective**: Consolidated architecture with strict Privacy-By-Design and modular domain separation.
+> **Repository**: `vpn-backend-service-v2`
 
-## 1. Directory Structure (Monorepo)
+## 1. Directory Structure
+
+The backend operates as a single deployable NestJS application, structured using Domain-Driven Design (DDD) principles.
 
 ```text
-/backend
-├── apps/                  # Deployable Microservices (The "Services")
-│   ├── auth-service/      # Identity & Payment (Trusted)
-│   ├── config-service/    # Token Redemption & VPN Config (Anonymous)
-│   ├── analytics-service/ # Usage Data & Telemetry (Anonymous)
-│   └── job-worker/        # Async Tasks (Blocklists, Cleanup)
-├── libs/                  # Shared Types & Logic
-│   ├── common/            # DTOs, Guards, Decorators
-│   ├── crypto/            # Blind Signatures, NaCl/Box
-│   ├── database/          # TypeORM/Prisma Configs (Postgres/Redis)
-│   └── wireguard/         # Node Selection & Netlink wrappers
+/vpn-backend-service-v2
+├── src/
+│   ├── account/          # User profile and history management
+│   ├── auth/             # Firebase identity verification & session
+│   ├── connection/       # VPN session state tracking
+│   ├── crypto/           # Blind Signature & cryptographic utilities
+│   ├── logger/           # Centralized logging
+│   ├── nodes/            # Edge VPN node registration and fleet state
+│   ├── notifications/    # Email/Push alerts
+│   ├── payment/          # Stripe webhooks & processing
+│   ├── preferences/      # User app configuration
+│   ├── prisma/           # Database ORM client and schema
+│   ├── subscription/     # Plan provisioning and access control
+│   └── vpn-config/       # Anonymous token redemption & WireGuard key exchange
 ├── package.json
-└── nx.json
+└── tsconfig.json
 ```
 
-## 2. Core B2C Services ("Project Phoenix")
+## 2. Core Domains ("Project Phoenix")
 
-### A. `b2c-auth` (The Gatekeeper)
+The backend consolidates what were historically distinct microservices logically into modular domains.
 
+### A. Identity & Billing (The Gatekeeper)
+
+* **Modules**: `auth`, `account`, `subscription`, `payment`
 * **Role**: Knows *Who* the user is.
 * **Responsibilities**:
   * Validates Firebase ID Tokens.
-  * Syncs Subscription Status (Stripe/Apple).
-  * **Account Mgmt**: Manages Payment History & Invoices.
-  * **Blind Signing**: Issues `Signed(Blind(Token))` upon proof of valid subscription.
-* **Data Access**: Read/Write access to `UserDB` (Postgres). NO access to VPN Configs.
+  * Syncs Subscription Status.
+  * **Account Mgmt**: Manages Payment History & User Profiles.
+  * **Privacy Shield**: Issues `Signed(Blind(Token))` cryptographically without linking the token to the user ID.
+* **Data Access**: Has Read/Write access to user-identifying tables (`User`, `Subscription`). NO access to VPN connection state logs.
 
-### B. `b2c-config` (The Anonymizer)
+### B. VPN Configuration (The Anonymizer)
 
+* **Modules**: `vpn-config`, `crypto`, `nodes`, `connection`
 * **Role**: Knows *That* a user is valid, but not *Who* they are.
 * **Responsibilities**:
   * **Location Discovery**: Publicly lists available VPN regions/endpoints.
-  * **Fleet Management**: Registers new nodes and ingests real-time metrics/health.
+  * **Fleet Management**: Registers new Edge VPN nodes and ingested node metrics.
   * **Token Redemption**: Verifies cryptographic signature of the Blind Token.
-  * **Double-Spend Check**: Ensures token hasn't been used recently (Redis).
-  * **Optimal Node Selection**: Assigns the user to the best node based on load metrics.
-  * **Config Gen**: Returns WireGuard keys (`Peer/Interface`).
-* **Data Access**:
-  * **Write**: `StateDB` (Redis) for used tokens.
-  * **Write**: `NodeDB` (Postgres) for Node Registration/Status.
-  * **Read/Write**: Redis (Hot Metrics).
-  * **NO Access**: `UserDB`.
+  * **Config Gen**: Returns WireGuard keys (`Peer/Interface`) and routes users to optimal nodes.
+* **Data Access**: Write/Read `Node` and connection metrics. **NO Access** to `User` identification tables to preserve zero logs.
 
-### C. `b2c-analytics` ( The Observer)
+## 3. Future Enhancements
 
-* **Role**: Collects anonymous usage data for decision making.
-* **Design Constraints**:
-  * **No PII**: IP Addresses must be dropped at ingress (Load Balancer level).
-  * **No IDs**: Reports must NOT contain UserIDs or DeviceIDs. Use ephemeral session UUIDs or purely aggregate buckets.
-* **Metrics Collected**:
-  * **Performance**: Latency, Throughput, Connection Failures (Heatmap).
-  * **Value**: Total MB Blocked, Time Saved (Aggregated).
-  * **Usage**: Session Duration, Data Transferred (e.g., "1GB-5GB bucket").
-* **Data Path**: `Client` -> `b2c-analytics` -> `ClickHouse` (OLAP).
+While the current system utilizes a single cohesive API, the following components are scheduled for future implementation:
 
-## 3. Infrastructure Services
+### C. Analytics Service (The Observer)
 
-### D. `node-daemon` (The Edge)
+* **Role**: Will collect anonymous usage data (latency, aggregated usage buckets) for decision-making without tracking PII or IP addresses.
+* **Status**: *Planned for future integration*.
 
-* **Role**: Runs on EVERY VPN Node (Exit Nodes).
-* **Responsibilities**:
-  * **Self-Healing**: Reports health/load to internal monitoring.
-  * **Heartbeat**: Sends Registration & Pulse (Metrics) to `b2c-config`.
-  * **WireGuard Mgmt**: Configures kernel interfaces via Netlink.
-  * **Firewall**: Manages `nftables` / `iptables` for NAT and blocking.
+### D. Async Job Worker
 
-### E. `job-worker` (Async)
-
-* **Role**: Background maintenance.
-* **Responsibilities**:
-  * **Blocklist Compiler**: Downloads StevenBlack hosts, compiles to binary Bloom Filter, uploads to CDN.
-  * **Node Reaper**: Terminates ephemeral nodes > 24h old.
+* **Role**: Will handle background maintenance operations such as compiling blocklists, cleaning up stale sessions, and reaping dead nodes asynchronously.
+* **Status**: *Planned for future integration*.

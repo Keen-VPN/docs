@@ -55,6 +55,16 @@ C4Component
 
 ## Component Description
 
-* **Auth Module**: Protects all internal endpoints. Uses `Passport.js` with Firebase strategies for user clients, and custom guards for API Keys (Nodes).
-* **Prisma Module**: The data-access layer. Instantiates the connection pool for PostgreSQL and exposes it across the service boundary.
-* **Modules (Nodes/VPN Config...)**: Domain-driven feature repositories isolating business logic corresponding to their distinct responsibilities.
+* **`Auth Module`**: Exposes Guards (`FirebaseAuthGuard`, `NodeAuthGuard`). Intercepts incoming HTTP requests to decode Firebase JWTs into User objects, or API Keys into Node objects.
+* **`Account Module`**: Exposes `AccountController` (`/account/*`). Handles user HTTP requests to read/delete their account data.
+* **`Subscription Module`**: Exposes `SubscriptionController` (`/subscription/*`). Queries the `Prisma Module` to check entitlement validity.
+* **`Payment Module`**: Exposes `PaymentController` (`/payment/*`). Exclusively listens for Stripe Webhooks and mutates `Subscription` tables via `Prisma Module`.
+* **`Nodes Module`**: Exposes `NodesController` (`/nodes/*`). Accepts heartbeat PUT requests from the `VPN Node Daemon`. Updates node availability in memory/DB.
+* **`VPN Config Module`**: Exposes `VpnConfigController` (`/b2c/vpn-config/*`). Validates EdDSA blind signatures and interacts with `Nodes Module` to assign WireGuard keys anonymously.
+* **`Crypto Module`**: Internal provider. Exposes methods for Blind Signature validation and RSA key-pair extraction.
+* **`Connection Module`**: Exposes internal listeners or controllers for capturing bytes-transferred telemetry.
+* **`Notifications Module`**: Abstract provider (SendGrid/MailGun). Sends system emails out.
+* **`Logger Module`**: Injected globally. Routes all `stdout` out to structured CloudWatch JSON logging.
+* **`Preferences Module`**: Exposes `PreferencesController` (`/preferences/*`). Allows clients to toggle routing behavior.
+* **`Sales Contact Module`**: Exposes `SalesContactController` (`/sales-contact/*`). Collects B2B leads.
+* **`Prisma Module`**: Global Data-access layer exposing the `PrismaClient` connection pool to all feature repositories.

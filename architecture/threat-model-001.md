@@ -1,105 +1,90 @@
 # THREAT-MODEL-001: KeenVPN "Project Phoenix"
 
-> **Status:** DRAFT
-> **Focus:** B2C Privacy & Zero-Knowledge Architecture
+> **Status:** ACTIVE
+> **Focus:** Comprehensive System Security Architecture (V2)
 
 ## 1. System Overview & Trust Boundaries
 
+The KeenVPN system is composed of several isolated components working in concert.
+
 ### Trust Boundaries
 
-1. **Device Boundary**: The User's Device (iOS/macOS). Trusted to hold the private identity.
-2. **Auth Boundary**: The Authentication Service. Trusted to know *who* paid, but untrusted for *what* they do.
-3. **Network Boundary**: The WireGuard Nodes. Untrusted. Must not know *who* is connected, only that they are authorized.
-4. **Internet Boundary**: The Exit. Completely untrusted.
+1. **Client Apps (iOS/macOS/Windows/Android)**: *Untrusted Environment*. The user's device holds their private identity (Firebase Auth) and generates the cryptographic Blind Tokens to be signed. We assume the environment could be compromised.
+2. **Backend API (Monolith on Netlify)**: *Trusted Core*. The single source of truth for Identity and Billing. Trusted to know *who* paid, but architecturally isolated from knowing *what* they do.
+3. **AWS Infrastructure (Terraform/EC2/Secrets Manager)**: *Trusted Foundation*. Holds all environmental secrets (`NODE_TOKEN`, `FIREBASE_PRIVATE_KEY`, `BLINDED_SIGNING_PRIVATE_KEY`). Management is strictly declarative via GitOps (`infra-terraform`).
+4. **Edge Configuration (Ansible)**: *Trusted Automation*. `infra-ansible` bootstraps new EC2 instances securely, fetching secrets dynamically to eliminate hardcoded credentials.
+5. **VPN Nodes (Edge OS & Node Daemon)**: *Untrusted Data Plane*. Must not know *who* is connected, only that they hold a valid unblinded cryptographic token. Stores zero logs.
+6. **Public Internet**: *Hostile*. The final exit point.
 
 ### Data Flow & Sensitivity
 
 | Data Type | Location | Sensitivity | Mitigation |
 | :--- | :--- | :--- | :--- |
-| **Email/Password** | Auth Service | High | Salted Hashing (Argon2), never logged. |
-| **Payment ID** | Auth Service | High | Stored in dedicated PCI-compliant DB. decoupled from VPN usage. |
-| **Real IP** | Ingress (WG Node) | Critical | Ephemeral only. Dropped immediately after handshake. |
-| **Browsing Data** | Egress (WG Node) | Critical | Never logged. RAM only. |
-| **VPN Credentials** | Config Service | High | One-time use or short-lived. |
+| **Identity / Firebase UID** | Backend (Prisma DB) | High | Minimal collection. Offloaded password hashing to Firebase. |
+| **Payment Information** | Stripe | High | Fully off-loaded to Stripe PCI-compliant servers. |
+| **Real Client IP** | Edge Node (RAM) | Critical | Ephemeral only. Dropped immediately after WireGuard handshake. Never synced. |
+| **Browsing Data / Traffic** | Edge Node | Critical | Never logged. Passed through NAT exclusively in RAM. |
+| **Infrastructure Secrets** | AWS Secrets Manager | Critical | Fetched at runtime via IAM/RBAC. Never committed. |
 
-## 2. STRIDE Analysis
+## 2. STRIDE Analysis (End-to-End)
 
 ### S - Spoofing
 
-* **Threat:** Attacker impersonates a valid user to use the VPN for free.
-* **Mitigation:** `Auth Service` issues Cryptographically Signed Blind Tokens. `Config Service` verifies signature.
-* **Threat:** Malicious Wi-Fi acts as the VPN server.
-* **Mitigation:** WireGuard utilizes pre-shared keys and public key pinning. Client verifies Server public key.
+* **Threat:** Attacker impersonates a valid user to bypass payment.
+* **Mitigation:** Backend issues Cryptographically Signed Blind Tokens only to active Firebase subscribers. VPN Config Service verifies the RSA signature of unblinded tokens.
+* **Threat:** Malicious Wi-Fi intercepts VPN handshake.
+* **Mitigation:** WireGuard utilizes strict pre-shared keys and public key pinning (Noise Protocol Framework).
+* **Threat:** Rogue Node Daemon spoofing legitimacy.
+* **Mitigation:** Node Daemons authenticate via the centralized `NODE_TOKEN` injected via AWS Secrets Manager.
 
 ### T - Tampering
 
-* **Threat:** ISP modifies configuration packets.
-* **Mitigation:** All API communication over HTTPS (TLS 1.3). WireGuard protocol protects the tunnel integrity (Poly1305).
-* **Threat:** Malicious app on device modifies blocklists.
-* **Mitigation:** App Sandbox + App-Group storage (read-only for Extension). System Integrity Protection (macOS) / Sandbox (iOS).
+* **Threat:** ISP or Man-in-the-Middle modifies traffic.
+* **Mitigation:** HTTPS (TLS 1.3) encapsulates all control plane APIs. WireGuard (Poly1305) protects tunnel integrity.
+* **Threat:** Unauthorized modification of infrastructure.
+* **Mitigation:** All AWS/Node configuration is immutable. Modifications require PR approval targeting the `infra-terraform` or `infra-ansible` repositories.
 
 ### R - Repudiation
 
-* **Threat:** User denies performing malicious activity (e.g., hacking).
-* **Context:** For B2C, we **feature** Repudiation. We *want* to be unable to prove a user did X.
-* **Mitigation:** Shared IP addresses (NAT) on exit nodes. No connection logs.
+* **Context:** For B2C Privacy, we **feature** Repudiation. We *want* to be unable to prove a user did X.
+* **Mitigation:** Shared IP addresses (NAT Masquerading) on exit nodes. No connection logs correlating User IDs with Node IPs.
 
 ### I - Information Disclosure
 
-* **Threat:** "The Correlation Attack" - Identifying a user by correlating Payment Time with Connection Time.
-* **Mitigation:** **Blind Tokens** (Privacy Pass). The token issuance is decoupled from token redemption. User buys 30 "Day Tokens" at once.
-  * *Scenario:* Police demand "User who connected at 12:00".
-  * *Result:* We have no logs of connection times linked to User IDs. We only know a valid token was redeemed.
+* **Threat:** "The Correlation Attack" (Linking payment time to connection time).
+* **Mitigation:** **Blind Signatures** (Privacy Pass architecture). Token issuance is decoupled from token redemption. Backend signs a blinded hash it cannot read.
+* **Threat:** Server compromise reading historical traffic.
+* **Mitigation:** Node Daemons run on Alpine Linux in RAM (`tmpfs`). Zero-logging policy enforced at the OS level (`nftables`).
 
 ### D - Denial of Service
 
-* **Threat:** DDoS against Auth Service.
-* **Mitigation:** Cloudflare WAF. Rate limiting on API execution.
-* **Threat:** UDP Flood against WireGuard ports.
-* **Mitigation:** WireGuard "Cookie" mechanism (stateless defense).
+* **Threat:** DDoS against the monolithic Backend API.
+* **Mitigation:** Netlify Edge Network scaling and WAF rate limiting.
+* **Threat:** UDP Flood against WireGuard nodes.
+* **Mitigation:** WireGuard's native "Cookie" mechanism (stateless defense). Node Daemons auto-scale via AWS Auto Scaling Groups reacting to load spikes.
 
 ### E - Elevation of Privilege
 
-* **Threat:** Attacker gains root on VPN Node.
-* **Mitigation:**
-  * Nodes run Alpine Linux (minimal).
-  * WireGuard runs in kernel space (attack surface limited to WG module).
-  * SSH disabled (use SSM or Bastion).
-  * **Auto-Destruct:** Nodes are terminated and replaced every 24 hours.
+* **Threat:** Attacker gains SSH access to a VPN Node.
+* **Mitigation:** SSH is disabled entirely (Password Auth off). Only SSM is permitted.
+* **Threat:** Backend API vulnerabilities.
+* **Mitigation:** Strict NestJS Guards and Roles matrices decoupling the `auth` identity modules from the `vpn-config` modules.
 
 ## 3. Specific Attack Scenarios & Defenses
 
 ### Scenario A: Subpoena for "User X"
 
-* **Attack:** Government demands all logs for `user@example.com`.
-* **Defense:** We provide the Payment History. We attest that we have no logs of assigned IP addresses or traffic Usage for this user. Our architecture prevents us from knowing which Token belongs to User X after issuance.
+* **Attack:** Legal demand for logs regarding `user@example.com`.
+* **Defense:** Backend can provide the account creation date and Stripe payment history. We attest that we mathematically cannot correlate the identity to an assigned IP address or traffic block due to the Blind Signature decoupling protocol.
 
-### Scenario B: Rogue Employee
+### Scenario B: Target Node Compromise
 
-* **Attack:** Engineer `tcpdump`s the WireGuard interface on a live node.
+* **Attack:** Adversary exploits a zero-day to gain root on a running VPN node.
 * **Defense:**
-  * Strict Access Control (IAM).
-  * Nodes are ephemeral.
-  * Root access requires multi-party approval (future goal).
-  * *Residual Risk:* A live active attack on a specific node can capture traffic *at that moment*. No architecture can fully prevent this (traffic must exist in RAM to be routed), but ephemeral nodes minimize the window.
+  * The node holds no PII. It only tracks connected WireGuard public keys and anonymous session metrics.
+  * *Residual Risk:* Active traffic can be captured *while* the node is compromised. Nodes are treated as ephemeral and regularly reap/replaced by Terraform and Auto-Scaling logic to minimize the compromise window.
 
-### Scenario C: Malicious IAP Receipt
+### Scenario C: Rogue Insider
 
-* **Attack:** User replays a fake Apple Receipt.
-* **Defense:** Server-side verification with Apple (App Store Server API).
-
-## 4. Privacy Architecture Specifics
-
-### Blind Token Issuance (OPRF)
-
-1. **Blinding:** $$T_{blind} = H(Token) \times r$$ (Client side)
-2. **Signing:** $$S_{blind} = T_{blind} \times K_{private}$$ (Server side)
-3. **Unblinding:** $$S = S_{blind} \times r^{-1}$$ (Client side)
-4. **Verification:** Verify $$S$$ corresponds to $$H(Token)$$ using $$K_{public}$$.
-
-* *Result:* Server signs the token without knowing the underlying value.
-
-### Ephemeral Identity
-
-* WireGuard Public Keys are generated **on-demand** by the Client and rotated.
-* Users do not have a static IP.
+* **Attack:** Engineer attempts to extract system secrets to spawn rogue nodes.
+* **Defense:** Secrets (e.g., `NODE_TOKEN`, Stripe secrets) are locked behind AWS Secrets Manager. IAM access controls prevent blanket secret extraction.

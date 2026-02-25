@@ -22,11 +22,11 @@ We do not maintain "Servers"; we maintain "Capacity". A node exists only as long
 
 ## 2. The Control Plane (The Brain)
 
-* **Orchestrator**: Kubernetes (EKS/GKE) or a lightweight Go control binary ("Herder").
+* **Orchestrator**: A monolithic NestJS backend deployed via Serverless architecture and `infra-terraform` for AWS primitive management.
 * **Functions**:
-  * **Health Checks**: Ping nodes every 10s.
-  * **Load Balancing**: Assign user to the least loaded node (via Config Service).
-  * **Capacity Planning**: Auto-scale based on bandwidth aggregate.
+  * **Health Checks**: The Edge VPN Node Daemons synchronously ping the backend API layer every 10s.
+  * **Load Balancing**: The API assigns users to the least loaded node via Redis cache rankings.
+  * **Capacity Planning**: AWS Auto-Scaling triggered dynamically by usage thresholds.
 
 ## 3. Deployment Strategy (Terraform)
 
